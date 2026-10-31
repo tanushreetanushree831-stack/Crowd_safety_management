@@ -259,6 +259,7 @@
                     </button>
                 </form>
 
+                {% if guest_enabled %}
                 <!-- OR Divider -->
                 <div class="divider-row">
                     <span class="divider-line"></span>
@@ -273,6 +274,7 @@
                     </svg>
                     <span>Sign in as Guest</span>
                 </a>
+                {% endif %}
             </div>
         </section>
     </main>

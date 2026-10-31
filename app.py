@@ -38,6 +38,12 @@ import mimetypes
 import os
 import glob
 import hmac
+import sys
+import time
+import json
+import getpass
+import secrets
+from werkzeug.security import check_password_hash, generate_password_hash
 import database
 from datetime import datetime
 from collections import deque
@@ -87,8 +93,31 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
 )
 
-LOGIN_USERNAME = "user"
-LOGIN_PASSWORD = "pass123"
+LOGIN_USERNAME = os.environ.get("CROWDSENSE_USER", "admin")
+GUEST_ENABLED = os.environ.get("CROWDSENSE_ALLOW_GUEST") == "1"   # view-only guest, OFF by default
+_CRED_FILE = os.path.join(BASE_DIR, "credentials.json")           # git-ignored, holds only a hash
+
+
+def _load_password_hash():
+    """The password is never in the code: it is asked once on first run and stored as a hash."""
+    if os.path.exists(_CRED_FILE):
+        with open(_CRED_FILE) as f:
+            return json.load(f)["hash"]
+    pw = os.environ.get("CROWDSENSE_PASSWORD")
+    if not pw and sys.stdin and sys.stdin.isatty():
+        while not pw or len(pw) < 8:
+            pw = getpass.getpass(f"First run - choose a password for '{LOGIN_USERNAME}' (8+ characters): ")
+    if not pw:
+        pw = secrets.token_urlsafe(9)
+        print(f"First run - generated password for '{LOGIN_USERNAME}': {pw}")
+    h = generate_password_hash(pw)
+    with open(_CRED_FILE, "w") as f:
+        json.dump({"hash": h}, f)
+    return h
+
+
+PASSWORD_HASH = _load_password_hash()
+_fails = {}   # ip -> (failed attempts, time of first failure)
 
 
 @app.before_request
@@ -102,10 +131,11 @@ def require_login():
         "periodic_frame",
         "entry",
         "exit_route",
-        "clear_threat",
     }
     if request.endpoint not in public_endpoints and not session.get("authenticated"):
         return redirect(url_for("login"))
+    if session.get("username") == "Guest" and request.endpoint in {"set_capacity", "reset_counts", "clear_threat"}:
+        return jsonify({"error": "Guests can view only."}), 403
 
 
 # -----------------------------------------------------------------------------------
@@ -176,6 +206,38 @@ def inspect_frame_for_threats(image_path):
     except Exception as err:
         print(f"Threat inspection warning: {err}")
         return []
+
+THREAT_LOG_COOLDOWN_S = 30   # same weapon seen again within 30 s updates the banner but is not logged again
+SCAN_PERIODIC_FRAMES = os.environ.get("CROWDSENSE_SCAN_PERIODIC", "1") == "1"   # set to 0 to save CPU
+_last_threat_logged = 0.0
+
+
+def handle_threats(image_path, filename):
+    """Scan one saved frame, raise the security alert, log it (rate-limited). Returns the labels found."""
+    global latest_threat_alert, _last_threat_logged
+    try:
+        weapons = inspect_frame_for_threats(image_path)
+    except Exception as err:
+        print(f"Threat inspection error: {err}")
+        return []
+    if not weapons:
+        return []
+    weapon_list = ", ".join(weapons)
+    latest_threat_alert = {
+        "threat_type": weapons,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "weapons_str": weapon_list,
+        "image_filename": filename,
+    }
+    if time.time() - _last_threat_logged >= THREAT_LOG_COOLDOWN_S:
+        _last_threat_logged = time.time()
+        try:
+            database.log_event("THREAT_ALERT", 0, people_inside_count(), filename, f"Threat: {weapon_list}")
+        except Exception as db_err:
+            print(f"Failed to log THREAT_ALERT in database: {db_err}")
+        add_alert(f"CRITICAL: Weapon Detected ({weapon_list})", "critical")
+    return weapons
+
 
 SAVE_DIR = os.path.join(BASE_DIR, "processed_images")
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -430,29 +492,8 @@ def verify_frame():
     latest_image_name = filename
 
     # --- WEAPON / THREAT DETECTION ---
-    detected_weapons = []
-    try:
-        saved_frame_path = os.path.join(CAPTURES_DIR, filename)
-        detected_weapons = inspect_frame_for_threats(saved_frame_path)
-    except Exception as threat_err:
-        print(f"Threat inspection error: {threat_err}")
-        detected_weapons = []
-
+    detected_weapons = handle_threats(os.path.join(CAPTURES_DIR, filename), filename)
     threat_detected = bool(detected_weapons)
-    if threat_detected:
-        weapon_list = ", ".join(detected_weapons)
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        latest_threat_alert = {
-            "threat_type": detected_weapons,
-            "timestamp": current_time,
-            "weapons_str": weapon_list,
-            "image_filename": filename,
-        }
-        try:
-            database.log_event("THREAT_ALERT", 0, people_inside_count(), filename, f"Threat: {weapon_list}")
-        except Exception as db_err:
-            print(f"Failed to log THREAT_ALERT in database: {db_err}")
-        add_alert(f"🚨 CRITICAL: Weapon Detected ({weapon_list})", "critical")
 
     heatmap = build_heatmap(img, boxes)
     heatmap_name = f"heatmap_{timestamp}.jpg"
@@ -532,6 +573,9 @@ def periodic_frame():
     cv2.imwrite(os.path.join(SAVE_DIR, filename), annotated)
     latest_image_name = filename
 
+    if SCAN_PERIODIC_FRAMES:   # also look for weapons in the ambient frames, not just at the gate
+        handle_threats(os.path.join(CAPTURES_DIR, filename), filename)
+
     heatmap = build_heatmap(img, boxes)
     heatmap_name = f"heatmap_{timestamp}.jpg"
     cv2.imwrite(os.path.join(SAVE_DIR, heatmap_name), heatmap)
@@ -604,7 +648,7 @@ def exit_route():
     })
 
 
-@app.route("/reset", methods=["GET", "POST"])
+@app.route("/reset", methods=["POST"])
 def reset_counts():
     global entry_count, exit_count, latest_people_in_frame, last_zone_color
     entry_count = 0
@@ -657,7 +701,7 @@ def status():
     })
 
 
-@app.route("/clear_threat", methods=["POST", "GET"])
+@app.route("/clear_threat", methods=["POST"])
 def clear_threat():
     global latest_threat_alert
     latest_threat_alert = None
@@ -728,11 +772,15 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         remember = bool(request.form.get("remember"))
-        if not hmac.compare_digest(username, LOGIN_USERNAME):
-            error = "User not found. Check your username and try again."
-        elif not hmac.compare_digest(password, LOGIN_PASSWORD):
-            error = "Incorrect password. Please try again."
+        ip = request.remote_addr or "?"
+        tries, first = _fails.get(ip, (0, 0.0))
+        if tries >= 5 and time.time() - first < 300:
+            error = "Too many attempts. Wait 5 minutes and try again."
+        elif not hmac.compare_digest(username, LOGIN_USERNAME) or not check_password_hash(PASSWORD_HASH, password):
+            _fails[ip] = (tries + 1, first if tries and time.time() - first < 300 else time.time())
+            error = "Wrong username or password."
         else:
+            _fails.pop(ip, None)
             session.clear()
             session["authenticated"] = True
             session["username"] = username
@@ -740,11 +788,13 @@ def login():
                 session.permanent = True
             return redirect(url_for("dashboard"))
 
-    return render_template("login.html", error=error, username=username)
+    return render_template("login.html", error=error, username=username, guest_enabled=GUEST_ENABLED)
 
 
 @app.route("/guest_login", methods=["GET", "POST"])
 def guest_login():
+    if not GUEST_ENABLED:
+        return render_template("login.html", error="Guest access is turned off.", username="", guest_enabled=GUEST_ENABLED)
     session.clear()
     session["authenticated"] = True
     session["username"] = "Guest"

@@ -337,7 +337,7 @@
 
     window.resetCounters = function () {
         if (!confirm('Are you sure you want to reset entry and exit counters to 0?')) return;
-        fetch('/reset')
+        fetch('/reset', { method: 'POST' })
             .then(res => res.json())
             .then(() => refreshStatus())
             .catch(err => console.error('Reset error:', err));

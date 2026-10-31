@@ -31,3 +31,4 @@ __pycache__/
 captures/
 processed_images/
 yolov8s.pt
+credentials.json

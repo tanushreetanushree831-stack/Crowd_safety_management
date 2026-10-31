@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (forgotLink) {
         forgotLink.addEventListener('click', (e) => {
             e.preventDefault();
-            alert('Default System Access Credentials:\n\n• Username: user\n• Password: pass123\n\nOr click "Sign in as Guest" for instant access.');
+            alert('Ask your venue administrator to reset your access.');
         });
     }
 });
