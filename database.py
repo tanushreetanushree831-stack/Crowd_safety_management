@@ -27,7 +27,8 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "crowd_system
 # TRIGGER      : a beam-break photo where YOLO found a person (audit record)
 # OBJECT       : a beam-break photo where YOLO found no person (audit record, nothing counted)
 # RESET        : counters cleared, so get_latest_occupancy() returns 0 afterwards
-VALID_DIRECTIONS = ("ENTRY", "EXIT", "RESET", "TRIGGER", "OBJECT")
+# THREAT_ALERT : weapon/threat detected on incoming verification frame
+VALID_DIRECTIONS = ("ENTRY", "EXIT", "RESET", "TRIGGER", "OBJECT", "THREAT_ALERT")
 
 logger = logging.getLogger(__name__)
 

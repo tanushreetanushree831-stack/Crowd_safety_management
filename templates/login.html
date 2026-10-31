@@ -3,124 +3,321 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#070d1d">
-    <title>Sign in | CrowdSense</title>
+    <meta name="theme-color" content="#060b17">
+    <title>CrowdSense — Smart Crowd Safety Management</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
 </head>
 <body class="login-page">
-    <main class="login-shell">
-        <section class="welcome-panel" aria-label="CrowdSense overview">
-            <div class="brand">
-                <span class="brand-mark" aria-hidden="true">
-                    <svg viewBox="0 0 48 48" fill="none">
-                        <circle cx="24" cy="12" r="6" fill="currentColor"/>
-                        <circle cx="11" cy="19" r="4.5" fill="currentColor" opacity=".8"/>
-                        <circle cx="37" cy="19" r="4.5" fill="currentColor" opacity=".8"/>
-                        <path d="M13 35v-4.5a11 11 0 0 1 22 0V35H13Z" fill="currentColor"/>
-                        <path d="M3 34v-3a8 8 0 0 1 5-7.4 8.5 8.5 0 0 0 3.1 1.1A14 14 0 0 0 8.5 31v3H3Zm42 0v-3a8 8 0 0 0-5-7.4 8.5 8.5 0 0 1-3.1 1.1A14 14 0 0 1 39.5 31v3H45Z" fill="currentColor" opacity=".8"/>
+
+    <!-- Ambient Glow / Curved Neon Wave Accents -->
+    <div class="glow-accent-top-left" aria-hidden="true">
+        <svg viewBox="0 0 400 400" fill="none">
+            <circle cx="80" cy="80" r="180" stroke="url(#arcGrad1)" stroke-width="2.5" opacity="0.45" />
+            <circle cx="80" cy="80" r="260" stroke="url(#arcGrad2)" stroke-width="1.8" opacity="0.3" />
+            <defs>
+                <linearGradient id="arcGrad1" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#38bdf8" />
+                    <stop offset="100%" stop-color="#818cf8" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient id="arcGrad2" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stop-color="#818cf8" />
+                    <stop offset="100%" stop-color="#c084fc" stop-opacity="0" />
+                </linearGradient>
+            </defs>
+        </svg>
+    </div>
+
+    <div class="glow-accent-bottom-left" aria-hidden="true">
+        <svg viewBox="0 0 500 500" fill="none">
+            <circle cx="60" cy="440" r="240" stroke="url(#arcGrad3)" stroke-width="2" opacity="0.35" />
+            <circle cx="60" cy="440" r="340" stroke="url(#arcGrad4)" stroke-width="1.5" opacity="0.2" />
+            <defs>
+                <linearGradient id="arcGrad3" x1="0" y1="1" x2="1" y2="0">
+                    <stop offset="0%" stop-color="#38bdf8" />
+                    <stop offset="100%" stop-color="#6366f1" stop-opacity="0" />
+                </linearGradient>
+                <linearGradient id="arcGrad4" x1="0" y1="1" x2="1" y2="0">
+                    <stop offset="0%" stop-color="#818cf8" />
+                    <stop offset="100%" stop-color="#a855f7" stop-opacity="0" />
+                </linearGradient>
+            </defs>
+        </svg>
+    </div>
+
+    <!-- Stadium Night Background Scene -->
+    <div class="stadium-backdrop" aria-hidden="true">
+        <!-- Stadium Floodlights Glow -->
+        <div class="stadium-lights-glow"></div>
+        <div class="stadium-lights-core"></div>
+        
+        <!-- Stadium Roof & Structure Silhouette -->
+        <svg class="stadium-svg" viewBox="0 0 1440 600" preserveAspectRatio="xMidYMax slice">
+            <defs>
+                <!-- Stadium glow -->
+                <radialGradient id="fieldGlow" cx="50%" cy="60%" r="50%">
+                    <stop offset="0%" stop-color="#1e40af" stop-opacity="0.38" />
+                    <stop offset="50%" stop-color="#0f2868" stop-opacity="0.18" />
+                    <stop offset="100%" stop-color="#060b17" stop-opacity="0" />
+                </radialGradient>
+                <!-- Crowd gradient -->
+                <linearGradient id="crowdGradFront" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#0e172a" />
+                    <stop offset="100%" stop-color="#030712" />
+                </linearGradient>
+                <linearGradient id="crowdGradBack" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#142142" />
+                    <stop offset="100%" stop-color="#090f20" />
+                </linearGradient>
+            </defs>
+
+            <!-- Distant stadium field lighting dome -->
+            <ellipse cx="680" cy="380" rx="420" ry="160" fill="url(#fieldGlow)" />
+
+            <!-- Stadium structure curve / arch canopy -->
+            <path d="M 400 340 Q 680 230 1020 330 Q 1060 345 1100 370 L 1100 450 L 360 450 Z" fill="#0d1b38" opacity="0.65" />
+            <path d="M 410 336 Q 680 228 1010 326" stroke="#60a5fa" stroke-width="2.5" fill="none" opacity="0.8" />
+            <!-- Stadium light towers beam -->
+            <path d="M 450 330 L 460 380 M 500 300 L 510 380 M 560 270 L 570 380 M 630 250 L 635 380 M 710 250 L 715 380 M 780 260 L 785 380 M 850 280 L 855 380 M 920 310 L 925 380 M 970 330 L 975 380" stroke="#38bdf8" stroke-width="1.2" opacity="0.4" />
+            <!-- Grandstand lighting strip -->
+            <path d="M 430 342 Q 680 248 990 335" stroke="#93c5fd" stroke-width="4" stroke-dasharray="8 6" fill="none" opacity="0.9" />
+
+            <!-- Middle Crowd Layer -->
+            <g fill="url(#crowdGradBack)" opacity="0.85">
+                <!-- Row of distant spectators -->
+                <circle cx="80" cy="410" r="16"/><path d="M56 460 C56 426 104 426 104 460 Z"/>
+                <circle cx="140" cy="402" r="18"/><path d="M112 460 C112 420 168 420 168 460 Z"/>
+                <circle cx="210" cy="412" r="16"/><path d="M186 460 C186 428 234 428 234 460 Z"/>
+                <circle cx="280" cy="398" r="19"/><path d="M250 460 C250 416 310 416 310 460 Z"/>
+                <circle cx="355" cy="408" r="17"/><path d="M328 460 C328 424 382 424 382 460 Z"/>
+                <circle cx="430" cy="396" r="20"/><path d="M398 460 C398 414 462 414 462 460 Z"/>
+                <circle cx="505" cy="410" r="16"/><path d="M480 460 C480 426 530 426 530 460 Z"/>
+                <circle cx="580" cy="400" r="18"/><path d="M552 460 C552 418 608 418 608 460 Z"/>
+                <circle cx="650" cy="414" r="15"/><path d="M628 460 C628 430 672 430 672 460 Z"/>
+                <circle cx="720" cy="402" r="18"/><path d="M692 460 C692 420 748 420 748 460 Z"/>
+                <circle cx="795" cy="395" r="20"/><path d="M762 460 C762 412 828 412 828 460 Z"/>
+                <circle cx="870" cy="410" r="16"/><path d="M844 460 C844 426 896 426 896 460 Z"/>
+                <circle cx="940" cy="404" r="18"/><path d="M912 460 C912 422 968 422 968 460 Z"/>
+                <circle cx="1010" cy="412" r="17"/><path d="M984 460 C984 426 1036 426 1036 460 Z"/>
+                <circle cx="1080" cy="398" r="19"/><path d="M1050 460 C1050 416 1110 416 1110 460 Z"/>
+                <circle cx="1150" cy="408" r="17"/><path d="M1124 460 C1124 424 1176 424 1176 460 Z"/>
+                <circle cx="1225" cy="400" r="19"/><path d="M1194 460 C1194 416 1256 416 1256 460 Z"/>
+                <circle cx="1300" cy="410" r="16"/><path d="M1274 460 C1274 426 1326 426 1326 460 Z"/>
+                <circle cx="1375" cy="404" r="18"/><path d="M1346 460 C1346 422 1404 422 1404 460 Z"/>
+            </g>
+
+            <!-- Foreground Dense Crowd Silhouette -->
+            <g fill="url(#crowdGradFront)">
+                <circle cx="35" cy="470" r="24"/><path d="M0 600 L0 510 C0 472 70 472 70 510 L70 600 Z"/>
+                <circle cx="105" cy="455" r="26"/><path d="M65 600 L65 500 C65 456 145 456 145 500 L145 600 Z"/>
+                <circle cx="190" cy="475" r="23"/><path d="M152 600 L152 516 C152 478 228 478 228 516 L228 600 Z"/>
+                <circle cx="265" cy="450" r="28"/><path d="M222 600 L222 495 C222 450 308 450 308 495 L308 600 Z"/>
+                <circle cx="350" cy="470" r="25"/><path d="M310 600 L310 512 C310 470 390 470 390 512 L390 600 Z"/>
+                <circle cx="430" cy="452" r="27"/><path d="M388 600 L388 498 C388 452 472 452 472 498 L472 600 Z"/>
+                <circle cx="515" cy="478" r="24"/><path d="M476 600 L476 520 C476 480 554 480 554 520 L554 600 Z"/>
+                <circle cx="595" cy="448" r="29"/><path d="M550 600 L550 492 C550 445 640 445 640 492 L640 600 Z"/>
+                <circle cx="685" cy="472" r="25"/><path d="M645 600 L645 514 C645 472 725 472 725 514 L725 600 Z"/>
+                <circle cx="765" cy="450" r="28"/><path d="M722 600 L722 494 C722 448 808 448 808 494 L808 600 Z"/>
+                <circle cx="850" cy="475" r="24"/><path d="M812 600 L812 518 C812 478 888 478 888 518 L888 600 Z"/>
+                <circle cx="930" cy="454" r="27"/><path d="M888 600 L888 500 C888 454 972 454 972 500 L972 600 Z"/>
+                <circle cx="1010" cy="476" r="24"/><path d="M972 600 L972 520 C972 480 1048 480 1048 520 L1048 600 Z"/>
+                <circle cx="1090" cy="448" r="29"/><path d="M1044 600 L1044 492 C1044 445 1136 445 1136 492 L1136 600 Z"/>
+                <circle cx="1180" cy="472" r="25"/><path d="M1140 600 L1140 514 C1140 472 1220 472 1220 514 L1220 600 Z"/>
+                <circle cx="1265" cy="452" r="28"/><path d="M1222 600 L1222 496 C1222 450 1308 450 1308 496 L1308 600 Z"/>
+                <circle cx="1350" cy="475" r="24"/><path d="M1312 600 L1312 518 C1312 478 1388 478 1388 518 L1388 600 Z"/>
+                <circle cx="1420" cy="455" r="26"/><path d="M1380 600 L1380 500 C1380 456 1440 456 1440 500 L1440 600 Z"/>
+            </g>
+        </svg>
+    </div>
+
+    <!-- Main Container -->
+    <main class="login-container">
+        
+        <!-- Left Side: Branding, Logo, Slogan -->
+        <section class="brand-hero-section">
+            <div class="brand-hero-content">
+                <!-- CrowdSense Emblem Logo -->
+                <div class="brand-emblem-wrap">
+                    <svg class="brand-emblem-svg" viewBox="0 0 100 80" fill="none">
+                        <!-- Protective Glowing Dome Arch -->
+                        <path d="M 12 52 A 42 42 0 0 1 88 52" stroke="url(#domeGrad)" stroke-width="4.5" stroke-linecap="round" fill="none" />
+                        <!-- Left person silhouette -->
+                        <circle cx="28" cy="42" r="7.5" fill="#38bdf8" />
+                        <path d="M 15 68 C 15 54 41 54 41 68 Z" fill="#38bdf8" />
+                        <!-- Right person silhouette -->
+                        <circle cx="72" cy="42" r="7.5" fill="#38bdf8" />
+                        <path d="M 59 68 C 59 54 85 54 85 68 Z" fill="#38bdf8" />
+                        <!-- Center Main person silhouette (prominent) -->
+                        <circle cx="50" cy="34" r="9.5" fill="#60a5fa" />
+                        <path d="M 32 68 C 32 50 68 50 68 68 Z" fill="#60a5fa" />
+                        <defs>
+                            <linearGradient id="domeGrad" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stop-color="#38bdf8" />
+                                <stop offset="50%" stop-color="#60a5fa" />
+                                <stop offset="100%" stop-color="#818cf8" />
+                            </linearGradient>
+                        </defs>
                     </svg>
-                </span>
-                <span class="brand-name">Crowd<span>Sense</span></span>
-            </div>
-            <p class="brand-caption">MONITOR <i></i> MANAGE <i></i> ENSURE SAFETY</p>
-
-            <div class="welcome-copy">
-                <div class="live-pill"><span></span> CROWD SAFETY, IN REAL TIME</div>
-                <h1>See the crowd.<br><span>Stay one step ahead.</span></h1>
-                <p>One clear view of occupancy, activity and safety — so your team can focus on what matters.</p>
-            </div>
-
-            <div class="scene" aria-hidden="true">
-                <div class="scene-glow"></div>
-                <div class="scene-grid"></div>
-                <div class="venue">
-                    <div class="venue-roof"></div>
-                    <div class="venue-lights"></div>
-                    <div class="venue-structure"></div>
                 </div>
-                <svg class="crowd-art" viewBox="0 0 720 205" preserveAspectRatio="xMidYMax slice">
-                    <defs>
-                        <linearGradient id="crowdFade" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0" stop-color="#112750"/>
-                            <stop offset="1" stop-color="#071126"/>
-                        </linearGradient>
-                    </defs>
-                    <path fill="url(#crowdFade)" d="M0 205V102l16-17 19 12 13-22 23 14 17-28 25 25 13-16 21 21 17-39 24 20 17-17 21 26 21-45 24 24 17-19 25 32 17-28 24 21 20-30 20 29 20-16 19 29 19-24 21 17 20-30 23 23 19-17 17 28 24-19 20 21 17-13 18 24 20-18 17 14 21-21 21 25 16-14 20 22 18-14 19 20 16-11 20 16v89H0Z"/>
-                    <g fill="#071126">
-                        <circle cx="45" cy="143" r="14"/><path d="M24 205v-30a21 21 0 0 1 42 0v30Z"/>
-                        <circle cx="105" cy="153" r="12"/><path d="M86 205v-26a19 19 0 0 1 38 0v26Z"/>
-                        <circle cx="174" cy="137" r="16"/><path d="M149 205v-34a25 25 0 0 1 50 0v34Z"/>
-                        <circle cx="245" cy="157" r="13"/><path d="M224 205v-28a21 21 0 0 1 42 0v28Z"/>
-                        <circle cx="315" cy="141" r="15"/><path d="M291 205v-33a24 24 0 0 1 48 0v33Z"/>
-                        <circle cx="392" cy="155" r="13"/><path d="M371 205v-28a21 21 0 0 1 42 0v28Z"/>
-                        <circle cx="466" cy="139" r="16"/><path d="M441 205v-34a25 25 0 0 1 50 0v34Z"/>
-                        <circle cx="539" cy="155" r="13"/><path d="M518 205v-28a21 21 0 0 1 42 0v28Z"/>
-                        <circle cx="612" cy="140" r="16"/><path d="M587 205v-34a25 25 0 0 1 50 0v34Z"/>
-                        <circle cx="680" cy="153" r="13"/><path d="M659 205v-28a21 21 0 0 1 42 0v28Z"/>
-                    </g>
-                    <g fill="#10244a" opacity=".9">
-                        <circle cx="78" cy="175" r="10"/><path d="M62 205v-15a16 16 0 0 1 32 0v15Z"/>
-                        <circle cx="211" cy="177" r="10"/><path d="M195 205v-15a16 16 0 0 1 32 0v15Z"/>
-                        <circle cx="354" cy="177" r="10"/><path d="M338 205v-15a16 16 0 0 1 32 0v15Z"/>
-                        <circle cx="501" cy="177" r="10"/><path d="M485 205v-15a16 16 0 0 1 32 0v15Z"/>
-                        <circle cx="647" cy="177" r="10"/><path d="M631 205v-15a16 16 0 0 1 32 0v15Z"/>
-                    </g>
-                </svg>
-            </div>
 
-            <div class="feature-strip">
-                <div><span class="feature-icon">▥</span><span>Real-time monitoring</span></div>
-                <div><span class="feature-icon">◆</span><span>Instant alerts</span></div>
-                <div><span class="feature-icon">◎</span><span>Safer spaces</span></div>
+                <!-- CrowdSense Title -->
+                <h1 class="brand-title">Crowd<span class="gradient-text">Sense</span></h1>
+
+                <!-- Subtitle with Blue Dots -->
+                <p class="brand-subtext">Monitor <span class="dot">•</span> Manage <span class="dot">•</span> Ensure Safety</p>
+
+                <!-- Slogan -->
+                <div class="brand-slogan">
+                    <p>Smart Crowd Management<br>for Safer, Smarter Spaces</p>
+                    <div class="slogan-glow-bar" aria-hidden="true"></div>
+                </div>
             </div>
         </section>
 
-        <section class="form-panel" aria-labelledby="login-title">
-            <div class="form-card">
-                <div class="form-eyebrow"><span class="shield-icon" aria-hidden="true">✓</span> SECURE ACCESS</div>
-                <h2 id="login-title">Welcome <span>back</span></h2>
-                <p class="form-intro">Sign in to access your CrowdSense dashboard.</p>
+        <!-- Right Side: Glassmorphism Login Card -->
+        <section class="login-card-section">
+            <div class="login-glass-card">
+                <!-- Header -->
+                <div class="card-header">
+                    <h2 class="card-title">Welcome <span class="gradient-accent">Back</span></h2>
+                    <p class="card-subtitle">Sign in to access the CrowdSense dashboard</p>
+                </div>
 
+                <!-- Error Message Notification if any -->
                 {% if error %}
-                <div class="login-error" role="alert">
-                    <span class="error-icon" aria-hidden="true">!</span>
+                <div class="error-banner" role="alert">
+                    <svg viewBox="0 0 24 24" class="error-svg-icon" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
                     <span>{{ error }}</span>
                 </div>
                 {% endif %}
 
-                <form method="post" action="{{ url_for('login') }}" class="login-form">
-                    <label for="username">Username</label>
-                    <div class="input-wrap">
-                        <span class="input-icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>
-                        </span>
-                        <input id="username" name="username" type="text" placeholder="Enter your username"
-                               value="{{ username }}" autocomplete="username" required autofocus>
+                <!-- Login Form -->
+                <form method="post" action="{{ url_for('login') }}" class="auth-form" id="loginForm">
+                    
+                    <!-- Username Field -->
+                    <div class="form-group">
+                        <label for="username" class="field-label">
+                            <svg class="field-icon" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
+                            </svg>
+                            <span>Username</span>
+                        </label>
+                        <div class="input-container">
+                            <input type="text" id="username" name="username" class="text-input" 
+                                   placeholder="Enter your username" value="{{ username }}" 
+                                   autocomplete="username" required autofocus>
+                        </div>
                     </div>
 
-                    <label for="password">Password</label>
-                    <div class="input-wrap">
-                        <span class="input-icon" aria-hidden="true">
-                            <svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v3"/></svg>
-                        </span>
-                        <input id="password" name="password" type="password" placeholder="Enter your password"
-                               autocomplete="current-password" required>
-                        <button class="password-toggle" type="button" aria-label="Show password" aria-pressed="false">
-                            <svg viewBox="0 0 24 24"><path d="M2.5 12s3.3-6 9.5-6 9.5 6 9.5 6-3.3 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.5"/></svg>
-                        </button>
+                    <!-- Password Field -->
+                    <div class="form-group">
+                        <label for="password" class="field-label">
+                            <svg class="field-icon" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+                            </svg>
+                            <span>Password</span>
+                        </label>
+                        <div class="input-container password-container">
+                            <input type="password" id="password" name="password" class="text-input" 
+                                   placeholder="Enter your password" autocomplete="current-password" required>
+                            <button type="button" class="password-toggle-btn" aria-label="Toggle password visibility">
+                                <svg class="eye-icon eye-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                    <circle cx="12" cy="12" r="3"/>
+                                </svg>
+                                <svg class="eye-icon eye-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+                                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                                    <line x1="1" y1="1" x2="23" y2="23"/>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
 
-                    <button class="sign-in-button" type="submit">
-                        <span>Sign in to dashboard</span><span class="button-arrow" aria-hidden="true">→</span>
+                    <!-- Remember Me & Forgot Password Row -->
+                    <div class="options-row">
+                        <label class="custom-checkbox">
+                            <input type="checkbox" name="remember" id="remember" checked>
+                            <span class="checkbox-box">
+                                <svg viewBox="0 0 12 10" class="check-svg" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="1.5 5 4.5 8 10.5 1.5"/>
+                                </svg>
+                            </span>
+                            <span class="checkbox-text">Remember me</span>
+                        </label>
+                        <a href="javascript:void(0)" class="forgot-link" id="forgotLink">Forgot Password?</a>
+                    </div>
+
+                    <!-- Sign In Submit Button -->
+                    <button type="submit" class="submit-btn">
+                        <svg class="btn-arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+                            <polyline points="10 17 15 12 10 7"/>
+                            <line x1="15" y1="12" x2="3" y2="12"/>
+                        </svg>
+                        <span>Sign In</span>
                     </button>
                 </form>
 
-                <div class="form-divider"><span></span><i>YOUR VENUE, AT A GLANCE</i><span></span></div>
-                <p class="security-note"><span aria-hidden="true">●</span> Protected access for your safety team</p>
+                <!-- OR Divider -->
+                <div class="divider-row">
+                    <span class="divider-line"></span>
+                    <span class="divider-text">OR</span>
+                    <span class="divider-line"></span>
+                </div>
+
+                <!-- Sign In as Guest Button -->
+                <a href="{{ url_for('guest_login') }}" class="guest-btn">
+                    <svg class="guest-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+                    </svg>
+                    <span>Sign in as Guest</span>
+                </a>
             </div>
-            <p class="copyright">© CrowdSense <span>·</span> Crowd safety monitoring</p>
         </section>
     </main>
-    <script src="{{ url_for('static', filename='js/login.js') }}" defer></script>
+
+    <!-- Bottom Features Dock & Tagline -->
+    <footer class="bottom-dock-footer">
+        <div class="footer-features-left">
+            <div class="feature-item">
+                <svg class="feature-svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/>
+                </svg>
+                <span>Real-Time Monitoring</span>
+            </div>
+            <span class="footer-pipe">|</span>
+            <div class="feature-item">
+                <svg class="feature-svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm1 14h-2v-2h2v2zm0-4h-2V7h2v5z"/>
+                </svg>
+                <span>Instant Alerts</span>
+            </div>
+            <span class="footer-pipe">|</span>
+            <div class="feature-item">
+                <svg class="feature-svg" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+                </svg>
+                <span>Enhanced Safety</span>
+            </div>
+        </div>
+
+        <div class="footer-tagline-right">
+            <span class="script-tagline">Safer Crowds. A Better Tomorrow.</span>
+            <svg class="swoosh-underline" viewBox="0 0 140 12" fill="none">
+                <path d="M 4 3 Q 70 12 136 4" stroke="url(#swooshGrad)" stroke-width="2.5" stroke-linecap="round"/>
+                <defs>
+                    <linearGradient id="swooshGrad" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stop-color="#38bdf8" />
+                        <stop offset="60%" stop-color="#818cf8" />
+                        <stop offset="100%" stop-color="#c084fc" />
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
+    </footer>
+
+    <!-- Password toggle & helper scripts -->
+    <script src="{{ url_for('static', filename='js/login.js') }}"></script>
 </body>
 </html>

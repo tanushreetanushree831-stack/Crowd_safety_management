@@ -28,6 +28,10 @@ Dashboard: http://192.168.4.2:5000
 
 from flask import Flask, Response, render_template, request, jsonify, redirect, session, send_from_directory, url_for
 from ultralytics import YOLO
+try:
+    from huggingface_hub import hf_hub_download
+except ImportError:
+    hf_hub_download = None
 import cv2
 import numpy as np
 import mimetypes
@@ -91,12 +95,14 @@ LOGIN_PASSWORD = "pass123"
 def require_login():
     public_endpoints = {
         "login",
+        "guest_login",
         "logout",
         "static",
         "verify_frame",
         "periodic_frame",
         "entry",
         "exit_route",
+        "clear_threat",
     }
     if request.endpoint not in public_endpoints and not session.get("authenticated"):
         return redirect(url_for("login"))
@@ -111,6 +117,65 @@ PERSON_CLASS_ID = 0  # COCO class 0 = "person"
 
 CONF_THRESHOLD = 0.4          # <-- YOLO "trust threshold" for a human detection
 CONFIRM_STREAK_REQUIRED = 2
+
+# ---- Threat / Weapon Detection Model (Guns, Pistols, Knives, Explosives) ----
+THREAT_MODEL_PATH = os.path.join(BASE_DIR, "threat_model.pt")
+THREAT_CONF_THRESHOLD = 0.45
+TARGET_THREAT_LABELS = ['gun', 'pistol', 'knife', 'weapon', 'rifle', 'explosive', 'grenade', 'explosion']
+threat_model = None
+
+try:
+    if not os.path.exists(THREAT_MODEL_PATH) and hf_hub_download is not None:
+        try:
+            print("Downloading pre-trained threat detection model weights...")
+            downloaded_threat_path = hf_hub_download(
+                repo_id="Subh775/Threat-Detection-YOLOv8n",
+                filename="weights/best.pt"
+            )
+            import shutil
+            shutil.copy(downloaded_threat_path, THREAT_MODEL_PATH)
+            print(f"Threat model saved locally to {THREAT_MODEL_PATH}")
+        except Exception as dl_err:
+            print(f"Hugging Face threat model download notice: {dl_err}")
+
+    if os.path.exists(THREAT_MODEL_PATH):
+        threat_model = YOLO(THREAT_MODEL_PATH)
+        print("Threat detection model loaded successfully.")
+    else:
+        print("Warning: Threat model file not found; threat inspection will be skipped.")
+except Exception as e:
+    print(f"Warning: Failed to initialize threat detection model: {e}")
+    threat_model = None
+
+# Global state for latest threat alert
+latest_threat_alert = None
+
+
+def inspect_frame_for_threats(image_path):
+    """Runs the threat model on the incoming JPEG frame and returns a list of detected threat labels."""
+    detected_threats = []
+    if threat_model is None:
+        return detected_threats
+    try:
+        results = threat_model.predict(
+            image_path,
+            conf=THREAT_CONF_THRESHOLD,
+            imgsz=640,
+            verbose=False,
+        )
+        if results and len(results) > 0:
+            result = results[0]
+            if result.boxes is not None and len(result.boxes) > 0:
+                for cls_id in result.boxes.cls.cpu().numpy():
+                    name = result.names.get(int(cls_id), "").lower().strip()
+                    for target in TARGET_THREAT_LABELS:
+                        if target in name or name in target:
+                            detected_threats.append(name.capitalize())
+                            break
+        return list(dict.fromkeys(detected_threats))
+    except Exception as err:
+        print(f"Threat inspection warning: {err}")
+        return []
 
 SAVE_DIR = os.path.join(BASE_DIR, "processed_images")
 os.makedirs(SAVE_DIR, exist_ok=True)
@@ -131,7 +196,7 @@ def cleanup_old_images():
                 pass
 
 # ---- Venue capacity thresholds (EDIT THESE for your actual venue) ----
-MAX_CAPACITY = 10
+MAX_CAPACITY = 5
 ORANGE_THRESHOLD = 0.6   # 60% of capacity -> orange
 RED_THRESHOLD = 0.9      # 90% of capacity -> red
 CRITICAL_THRESHOLD = 1.0 # 100%+ -> red AND the flash alert
@@ -341,6 +406,7 @@ def verify_frame():
     automatically registers entry/exit if a direction query parameter is provided."""
     global latest_image_name, latest_heatmap_name, latest_people_in_frame
     global last_verify_image_name, entry_count, exit_count, verified_people_count
+    global latest_threat_alert
 
     verified_people_count = 0
     # Check if a direction was passed in the URL (e.g. /verify_frame?direction=entry)
@@ -348,7 +414,7 @@ def verify_frame():
 
     img = decode_upload()
     if img is None:
-        return jsonify({"error": "could not decode image", "is_human": False}), 400
+        return jsonify({"error": "could not decode image", "is_human": False, "threat_detected": False, "threats": []}), 400
 
     img, annotated, boxes, is_human = run_detection(img)
     latest_people_in_frame = len(boxes)
@@ -362,6 +428,31 @@ def verify_frame():
     
     last_verify_image_name = filename
     latest_image_name = filename
+
+    # --- WEAPON / THREAT DETECTION ---
+    detected_weapons = []
+    try:
+        saved_frame_path = os.path.join(CAPTURES_DIR, filename)
+        detected_weapons = inspect_frame_for_threats(saved_frame_path)
+    except Exception as threat_err:
+        print(f"Threat inspection error: {threat_err}")
+        detected_weapons = []
+
+    threat_detected = bool(detected_weapons)
+    if threat_detected:
+        weapon_list = ", ".join(detected_weapons)
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        latest_threat_alert = {
+            "threat_type": detected_weapons,
+            "timestamp": current_time,
+            "weapons_str": weapon_list,
+            "image_filename": filename,
+        }
+        try:
+            database.log_event("THREAT_ALERT", 0, people_inside_count(), filename, f"Threat: {weapon_list}")
+        except Exception as db_err:
+            print(f"Failed to log THREAT_ALERT in database: {db_err}")
+        add_alert(f"🚨 CRITICAL: Weapon Detected ({weapon_list})", "critical")
 
     heatmap = build_heatmap(img, boxes)
     heatmap_name = f"heatmap_{timestamp}.jpg"
@@ -412,6 +503,8 @@ def verify_frame():
     return jsonify({
         "status": "ok",
         "is_human": bool(is_human),
+        "threat_detected": bool(threat_detected),
+        "threats": detected_weapons,
         "people_detected": len(boxes),
         "trigger_type": trigger_type,
         "image_filename": filename,
@@ -559,7 +652,17 @@ def status():
         "latest_heatmap": latest_heatmap_name,
         "alerts": list(alert_log),
         "history": list(crowd_history),
+        "threat_alert": latest_threat_alert,
+        "threat_detected": bool(latest_threat_alert),
     })
+
+
+@app.route("/clear_threat", methods=["POST", "GET"])
+def clear_threat():
+    global latest_threat_alert
+    latest_threat_alert = None
+    add_alert("Security threat alert cleared by operator", "info")
+    return jsonify({"status": "ok", "message": "Threat alert cleared"})
 
 
 # --- DATABASE INTEGRATION ---
@@ -624,6 +727,7 @@ def login():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
+        remember = bool(request.form.get("remember"))
         if not hmac.compare_digest(username, LOGIN_USERNAME):
             error = "User not found. Check your username and try again."
         elif not hmac.compare_digest(password, LOGIN_PASSWORD):
@@ -631,12 +735,44 @@ def login():
         else:
             session.clear()
             session["authenticated"] = True
+            session["username"] = username
+            if remember:
+                session.permanent = True
             return redirect(url_for("dashboard"))
 
     return render_template("login.html", error=error, username=username)
 
 
-@app.route("/logout", methods=["POST"])
+@app.route("/guest_login", methods=["GET", "POST"])
+def guest_login():
+    session.clear()
+    session["authenticated"] = True
+    session["username"] = "Guest"
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/set_capacity", methods=["GET", "POST"])
+def set_capacity():
+    global MAX_CAPACITY
+    cap = request.args.get("capacity")
+    if not cap and request.is_json:
+        cap = request.json.get("capacity")
+    if not cap and request.form:
+        cap = request.form.get("capacity")
+    if cap:
+        try:
+            val = int(cap)
+            if val > 0:
+                MAX_CAPACITY = val
+                add_alert(f"Venue capacity updated to {MAX_CAPACITY}", "info")
+                check_zone_transition()
+                return jsonify({"status": "ok", "max_capacity": MAX_CAPACITY})
+        except ValueError:
+            pass
+    return jsonify({"error": "Invalid capacity value"}), 400
+
+
+@app.route("/logout", methods=["POST", "GET"])
 def logout():
     session.clear()
     return redirect(url_for("login"))

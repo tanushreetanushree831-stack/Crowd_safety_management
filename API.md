@@ -142,9 +142,17 @@ These are additive and will not change anything above while the flag is off.
 
 ---
 
-## Not documented yet
+### `GET|POST /set_capacity`
+Updates the venue maximum capacity. Accepts `?capacity=N` query param or JSON `{ "capacity": N }`. Returns `{ "status": "ok", "max_capacity": N }`.
 
-- Login (`static/css/login.css`, `static/js/login.js`): add its endpoints here once they are in the repo.
+### `POST /clear_threat`
+Acknowledges and clears any active weapon/threat alert. Returns `{ "status": "ok", "threat_cleared": true }`.
+
+### Authentication endpoints
+- `GET /login`: Displays the CrowdSense sign-in page.
+- `POST /login`: Validates credentials (`username`, `password`, `remember`). Redirects to `/`.
+- `GET|POST /guest_login`: Signs in as guest and redirects to `/`.
+- `POST|GET /logout`: Clears session and redirects to `/login`.
 
 ---
 
