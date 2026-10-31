@@ -28,7 +28,8 @@ IR beams + ESP32-CAM  --Wi-Fi "CrowdSystem_ESP32"-->  Laptop (Flask + YOLOv8, 19
 | `database.py` | SQLite event log, statistics, hourly traffic, CSV export |
 | `templates/`, `static/` | Login page and dashboard (HTML, CSS, JavaScript) |
 | `API.md` | Every endpoint and what it returns |
-| `test_system.py` | Automated checks |
+| `test_system.py` | Automated checks (older, needs updating for the current login) |
+| `test_false_alerts.py` | Checks the false-detection and false-alarm protections |
 
 ## Run it (Windows)
 
@@ -73,6 +74,27 @@ Set these in the black window before `python app.py`, for example `set CROWDSENS
 | `CROWDSENSE_ALLOW_GUEST` | off | Set to `1` to show a view-only guest sign-in |
 | `CROWDSENSE_SCAN_PERIODIC` | `1` | Set to `0` to skip weapon checks on periodic frames and save CPU |
 | `FLASK_SECRET_KEY` | random per start | Set it to stay signed in across restarts |
+| `CAMERA_ROTATION` | `0` | Turn every camera frame clockwise by 0, 90, 180 or 270 degrees so people appear upright (see below) |
+| `CROWDSENSE_AUTO_ROTATE` | off | Set to `1` to let the server try other angles when nobody is found. Off by default because every extra angle adds false detections |
+
+## Fewer false detections and false alarms
+
+The numbers below are constants near the top of `app.py`. Raise a threshold to get fewer false alarms, at the cost of missing more real events.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `CONF_THRESHOLD` | 0.40 | Person boxes below this are ignored completely |
+| `HUMAN_COUNT_CONF` | 0.55 | A crossing is counted only if the best person box reaches this |
+| `MIN_PERSON_AREA` / `MAX_PERSON_AREA` | 3% / 85% | A person box must be a believable size. A hand or phone filling the lens is rejected |
+| `THREAT_CONF_THRESHOLD` | 0.60 | A weapon box below this confidence is ignored |
+| `THREAT_STRONG_CONF` | 0.85 | At or above this, one frame raises the weapon alert immediately |
+| `THREAT_CONFIRM_HITS` / `THREAT_CONFIRM_WINDOW_S` | 2 / 15 s | Below the strong level, the same weapon must be seen in 2 frames within 15 seconds |
+| `THREAT_MIN_AREA` / `THREAT_MAX_AREA` | 0.2% / 60% | Weapon boxes that are specks or fill the frame are ignored |
+| `THREAT_LOOKALIKE_OVERLAP` | 0.5 | A "weapon" lying on a phone, remote, laptop, keyboard, mouse or book is dropped |
+
+Weapon checks run on the untouched camera frame. The saved audit photo shows green boxes for counted people, grey boxes (with the reason) for ignored ones, and red boxes for weapon candidates, so you can see why each decision was made.
+
+**Camera orientation.** Open a saved `frame_*.jpg`. If people are upside down set `CAMERA_ROTATION=180` before `python app.py`; if they lie on their side use `90` or `270`. Run `python test_false_alerts.py` after changing any of these settings.
 
 ## Limits you should know about
 

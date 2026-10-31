@@ -145,13 +145,37 @@ _local_model = os.path.join(BASE_DIR, "yolov8s.pt")
 model = YOLO(_local_model if os.path.exists(_local_model) else "yolov8s.pt")
 PERSON_CLASS_ID = 0  # COCO class 0 = "person"
 
-CONF_THRESHOLD = 0.4          # <-- YOLO "trust threshold" for a human detection
+# ---- FALSE-DETECTION SETTINGS (people) ----------------------------------------------
+CONF_THRESHOLD = 0.4          # boxes below this are ignored completely (the "trust threshold")
+HUMAN_COUNT_CONF = 0.55       # a crossing only counts as a human if the best box reaches this
+MIN_PERSON_AREA = 0.03        # a person box must cover at least 3% of the frame ...
+MAX_PERSON_AREA = 0.85        # ... and at most 85%: a hand, phone or object right against the lens is not a person
 CONFIRM_STREAK_REQUIRED = 2
+
+# ---- CAMERA ORIENTATION ------------------------------------------------------------
+# Degrees CLOCKWISE to turn every frame so that people appear upright: 0, 90, 180 or 270.
+# Look at one saved frame_*.jpg: if people are upside down use 180, if they lie on their side use 90 or 270.
+# It is a fixed setting on purpose. The old code searched all 4 rotations and then LOCKED onto whichever
+# one gave any detection, so one lucky false hit rotated every later frame the wrong way.
+CAMERA_ROTATION = int(os.environ.get("CAMERA_ROTATION", "0"))
+if CAMERA_ROTATION not in (0, 90, 180, 270):
+    raise SystemExit("CAMERA_ROTATION must be 0, 90, 180 or 270")
+AUTO_ROTATE_SEARCH = os.environ.get("CROWDSENSE_AUTO_ROTATE", "0") == "1"   # off: every extra angle adds false alarms
 
 # ---- Threat / Weapon Detection Model (Guns, Pistols, Knives, Explosives) ----
 THREAT_MODEL_PATH = os.path.join(BASE_DIR, "threat_model.pt")
-THREAT_CONF_THRESHOLD = 0.45
-TARGET_THREAT_LABELS = ['gun', 'pistol', 'knife', 'weapon', 'rifle', 'explosive', 'grenade', 'explosion']
+# ---- FALSE-ALARM SETTINGS (weapons) --------------------------------------------------
+THREAT_CONF_THRESHOLD = 0.60   # a weapon box below this confidence is ignored (was 0.45)
+THREAT_STRONG_CONF = 0.85      # at or above this a single frame raises the alert straight away
+THREAT_CONFIRM_HITS = 2        # otherwise the SAME weapon must be seen in this many frames ...
+THREAT_CONFIRM_WINDOW_S = 15   # ... within this many seconds
+THREAT_MIN_AREA = 0.002        # ignore specks smaller than 0.2% of the frame
+THREAT_MAX_AREA = 0.60         # ignore boxes covering more than 60% of the frame (close-up objects)
+THREAT_LOOKALIKE_OVERLAP = 0.5 # drop a "weapon" if this much of it sits on a phone / remote / laptop ...
+LOOKALIKE_COCO_IDS = [63, 64, 65, 66, 67, 73]   # laptop, mouse, remote, keyboard, cell phone, book
+LOOKALIKE_CONF = 0.30
+TARGET_THREAT_LABELS = ['gun', 'pistol', 'knife', 'weapon', 'rifle', 'explosive', 'grenade', 'explosion',
+                        'handgun', 'firearm', 'revolver', 'shotgun', 'bomb']
 threat_model = None
 
 try:
@@ -171,6 +195,7 @@ try:
     if os.path.exists(THREAT_MODEL_PATH):
         threat_model = YOLO(THREAT_MODEL_PATH)
         print("Threat detection model loaded successfully.")
+        print("Threat model classes:", getattr(threat_model, "names", "unknown"))
     else:
         print("Warning: Threat model file not found; threat inspection will be skipped.")
 except Exception as e:
@@ -181,61 +206,125 @@ except Exception as e:
 latest_threat_alert = None
 
 
-def inspect_frame_for_threats(image_path):
-    """Runs the threat model on the incoming JPEG frame and returns a list of detected threat labels."""
-    detected_threats = []
-    if threat_model is None:
-        return detected_threats
+def threat_label_matches(name):
+    """True only if a model class name really is a weapon word. Whole words only: the old check also
+    accepted any class name that was merely a piece of a target word (even an empty name)."""
+    words = [w for w in "".join(ch if ch.isalpha() else " " for ch in str(name).lower()).split() if w]
+    return any(w in TARGET_THREAT_LABELS for w in words)
+
+
+def _overlap_fraction(box, other):
+    """Share of `box` (x1,y1,x2,y2) that lies inside `other`."""
+    ix1, iy1 = max(box[0], other[0]), max(box[1], other[1])
+    ix2, iy2 = min(box[2], other[2]), min(box[3], other[3])
+    inter = max(ix2 - ix1, 0) * max(iy2 - iy1, 0)
+    area = max((box[2] - box[0]) * (box[3] - box[1]), 1e-6)
+    return inter / area
+
+
+def scan_threats(frame):
+    """Look for weapons in ONE frame (a numpy BGR image) and return a list of
+    {"label", "confidence", "box"} that survived every false-alarm filter.
+
+    IMPORTANT: `frame` must be the RAW camera image. The old code scanned the saved copy that already had
+    the person boxes and text drawn on it, and those drawings could themselves look like objects."""
+    if threat_model is None or frame is None:
+        return []
     try:
-        results = threat_model.predict(
-            image_path,
-            conf=THREAT_CONF_THRESHOLD,
-            imgsz=640,
-            verbose=False,
-        )
-        if results and len(results) > 0:
-            result = results[0]
-            if result.boxes is not None and len(result.boxes) > 0:
-                for cls_id in result.boxes.cls.cpu().numpy():
-                    name = result.names.get(int(cls_id), "").lower().strip()
-                    for target in TARGET_THREAT_LABELS:
-                        if target in name or name in target:
-                            detected_threats.append(name.capitalize())
-                            break
-        return list(dict.fromkeys(detected_threats))
+        h, w = frame.shape[:2]
+        frame_area = float(h * w)
+        result = threat_model.predict(frame, conf=THREAT_CONF_THRESHOLD, imgsz=640, verbose=False)[0]
+        if result.boxes is None or len(result.boxes) == 0:
+            return []
+        xyxy = result.boxes.xyxy.cpu().numpy()
+        confs = result.boxes.conf.cpu().numpy()
+        classes = result.boxes.cls.cpu().numpy()
+
+        candidates = []
+        for box, conf, cls_id in zip(xyxy, confs, classes):
+            name = str(result.names.get(int(cls_id), "")).strip()
+            if not threat_label_matches(name) or float(conf) < THREAT_CONF_THRESHOLD:
+                continue
+            area_ratio = max(box[2] - box[0], 0) * max(box[3] - box[1], 0) / frame_area
+            if area_ratio < THREAT_MIN_AREA or area_ratio > THREAT_MAX_AREA:
+                continue
+            candidates.append({"label": name.capitalize(), "confidence": float(conf),
+                               "box": [float(v) for v in box]})
+        if not candidates:
+            return []
+
+        # Phones, remotes and laptops are the classic "gun" false alarms: if the weapon box sits on one, drop it.
+        # The everyday-object check only runs when a weapon candidate exists, so it costs nothing normally.
+        everyday = model.predict(frame, classes=LOOKALIKE_COCO_IDS, conf=LOOKALIKE_CONF, imgsz=640, verbose=False)[0]
+        if everyday.boxes is not None and len(everyday.boxes) > 0:
+            everyday_boxes = everyday.boxes.xyxy.cpu().numpy()
+            candidates = [c for c in candidates
+                          if not any(_overlap_fraction(c["box"], ob) >= THREAT_LOOKALIKE_OVERLAP
+                                     for ob in everyday_boxes)]
+        return candidates
     except Exception as err:
         print(f"Threat inspection warning: {err}")
         return []
 
+
+def inspect_frame_for_threats(frame):
+    """Labels of weapons found in one frame (kept so older code and tests that call it keep working)."""
+    return list(dict.fromkeys(c["label"] for c in scan_threats(frame)))
+
+
 THREAT_LOG_COOLDOWN_S = 30   # same weapon seen again within 30 s updates the banner but is not logged again
 SCAN_PERIODIC_FRAMES = os.environ.get("CROWDSENSE_SCAN_PERIODIC", "1") == "1"   # set to 0 to save CPU
 _last_threat_logged = 0.0
+_threat_hits = deque()       # (time, label) of recent weapon sightings, used for the 2-frame confirmation
 
 
-def handle_threats(image_path, filename):
-    """Scan one saved frame, raise the security alert, log it (rate-limited). Returns the labels found."""
+def handle_threats(frame, filename, detections=None):
+    """Scan one RAW frame, apply the confirmation rule, then raise / log the alert.
+    Returns the confirmed weapon labels (empty list = no alert). `detections` lets the caller pass the
+    result of scan_threats() when it already ran it (to draw the boxes on the saved image)."""
     global latest_threat_alert, _last_threat_logged
     try:
-        weapons = inspect_frame_for_threats(image_path)
+        found = detections if detections is not None else scan_threats(frame)
     except Exception as err:
         print(f"Threat inspection error: {err}")
         return []
-    if not weapons:
+
+    now = time.time()
+    while _threat_hits and now - _threat_hits[0][0] > THREAT_CONFIRM_WINDOW_S:
+        _threat_hits.popleft()
+    if not found:
         return []
+    for det in found:
+        _threat_hits.append((now, det["label"]))
+
+    confirmed = []
+    for det in found:
+        sightings = sum(1 for _, lab in _threat_hits if lab == det["label"])
+        if det["confidence"] >= THREAT_STRONG_CONF or sightings >= THREAT_CONFIRM_HITS:
+            confirmed.append(det)
+    if not confirmed:
+        print("Possible weapon seen but not confirmed yet: " +
+              ", ".join(f"{d['label']} {d['confidence']:.0%}" for d in found))
+        return []
+
+    weapons = list(dict.fromkeys(d["label"] for d in confirmed))
     weapon_list = ", ".join(weapons)
+    top_conf = max(d["confidence"] for d in confirmed)
     latest_threat_alert = {
         "threat_type": weapons,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "weapons_str": weapon_list,
         "image_filename": filename,
+        "confidence": round(top_conf, 2),
     }
-    if time.time() - _last_threat_logged >= THREAT_LOG_COOLDOWN_S:
-        _last_threat_logged = time.time()
+    if now - _last_threat_logged >= THREAT_LOG_COOLDOWN_S:
+        _last_threat_logged = now
         try:
-            database.log_event("THREAT_ALERT", 0, people_inside_count(), filename, f"Threat: {weapon_list}")
+            database.log_event("THREAT_ALERT", 0, people_inside_count(), filename,
+                               f"Threat: {weapon_list} ({top_conf:.0%})")
         except Exception as db_err:
             print(f"Failed to log THREAT_ALERT in database: {db_err}")
-        add_alert(f"CRITICAL: Weapon Detected ({weapon_list})", "critical")
+        add_alert(f"CRITICAL: Weapon Detected ({weapon_list}, {top_conf:.0%} sure) - please check the image", "critical")
     return weapons
 
 
@@ -278,7 +367,6 @@ verified_people_count = 0
 # --- DATABASE INTEGRATION ---
 last_verify_image_name = None
 recent_human_confidences = deque(maxlen=CONFIRM_STREAK_REQUIRED)
-selected_orientation_index = 0
 
 # ---- Alert history (shown in its own dashboard tab) ----
 alert_log = deque(maxlen=100)
@@ -357,76 +445,95 @@ if entry_count > 0:
     add_alert(f"Server restarted - restored {entry_count} people inside", "info")
 
 
+def _rotate_fixed(img):
+    """Turn the frame by the fixed CAMERA_ROTATION so people are upright."""
+    code = {90: cv2.ROTATE_90_CLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_COUNTERCLOCKWISE}.get(CAMERA_ROTATION)
+    return img if code is None else cv2.rotate(img, code)
+
+
+def judge_person_boxes(result, frame_shape):
+    """Decide, box by box, whether a YOLO 'person' box is trusted.
+    Returns [{"box", "conf", "counted", "reason"}]. A box is counted only if it is confident enough
+    AND has a believable size (not a speck, not a hand or phone filling the whole lens)."""
+    entries = []
+    if result.boxes is None or len(result.boxes) == 0:
+        return entries
+    h, w = frame_shape[:2]
+    frame_area = float(h * w)
+    xyxy = result.boxes.xyxy.cpu().numpy()
+    confs = result.boxes.conf.cpu().numpy()
+    for box, conf in zip(xyxy, confs):
+        conf = float(conf)
+        if conf < CONF_THRESHOLD:
+            continue
+        area = max(box[2] - box[0], 0) * max(box[3] - box[1], 0) / frame_area
+        reason = None
+        if conf < HUMAN_COUNT_CONF:
+            reason = "not sure enough"
+        elif area < MIN_PERSON_AREA:
+            reason = "too small"
+        elif area > MAX_PERSON_AREA:
+            reason = "too large, close-up object"
+        entries.append({"box": [float(v) for v in box], "conf": conf, "counted": reason is None, "reason": reason})
+    return entries
+
+
+def draw_person_boxes(img, entries):
+    """Green box = counted as a person. Grey box = seen but ignored, with the reason written on it,
+    so the audit photo shows exactly why a crossing was or was not counted."""
+    out = img.copy()
+    for e in entries:
+        x1, y1, x2, y2 = [int(v) for v in e["box"]]
+        color = (60, 200, 60) if e["counted"] else (150, 150, 150)
+        cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
+        label = f"person {e['conf']:.2f}" + ("" if e["counted"] else f" - ignored: {e['reason']}")
+        cv2.putText(out, label, (x1 + 4, max(y1 + 18, 18)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2)
+    return out
+
+
+def draw_threat_boxes(img, detections):
+    """Red boxes for weapon candidates that passed the filters, so the saved photo shows what was flagged."""
+    out = img
+    for det in detections or []:
+        if out is img:
+            out = img.copy()
+        x1, y1, x2, y2 = [int(v) for v in det["box"]]
+        cv2.rectangle(out, (x1, y1), (x2, y2), (0, 0, 255), 3)
+        cv2.putText(out, f"{det['label']} {det['confidence']:.0%}", (x1 + 4, max(y1 + 20, 20)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+    return out
+
+
 def run_detection(img, search_rotations=True):
-    """Run person detection and return (img, annotated, boxes, is_human).
+    """Run person detection. Returns (raw_img, annotated, boxes, is_human).
 
-    SPEED FIX: the previous version always ran YOLO on 4 rotated copies of every
-    frame (about 4x slower). The ESP32 waits for the /verify_frame reply with a
-    time limit, so a slow reply made it give up and never call /entry or /exit.
-    Now only the last orientation that worked is tried first (one pass, same
-    speed as the original). The other 3 rotations are tried only if that pass
-    finds nobody, and only when search_rotations is True.
+    * raw_img   - the frame after the fixed CAMERA_ROTATION, with nothing drawn on it
+    * annotated - the same frame with green (counted) and grey (ignored) person boxes drawn
+    * boxes     - only the COUNTED person boxes
+    * is_human  - True only if at least one box passed the confidence and size checks
     """
-    global selected_orientation_index
+    def detect(frame):
+        result = model.predict(frame, classes=[PERSON_CLASS_ID], conf=CONF_THRESHOLD, imgsz=640, verbose=False)[0]
+        return judge_person_boxes(result, frame.shape)
 
-    rotations = [None, cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_180, cv2.ROTATE_90_COUNTERCLOCKWISE]
+    img = _rotate_fixed(img)
+    entries = detect(img)
 
-    def orient(index):
-        return img if rotations[index] is None else cv2.rotate(img, rotations[index])
+    # Optional (off by default): if nobody was found, try the other angles for THIS frame only.
+    # Nothing is remembered, so one false hit can never turn the camera view sideways for later frames.
+    if AUTO_ROTATE_SEARCH and search_rotations and not any(e["counted"] for e in entries):
+        for code in (cv2.ROTATE_90_CLOCKWISE, cv2.ROTATE_180, cv2.ROTATE_90_COUNTERCLOCKWISE):
+            candidate = cv2.rotate(img, code)
+            candidate_entries = detect(candidate)
+            if any(e["counted"] for e in candidate_entries):
+                img, entries = candidate, candidate_entries
+                break
 
-    def predict(frames):
-        return list(model.predict(
-            frames,
-            classes=[PERSON_CLASS_ID],
-            conf=CONF_THRESHOLD,
-            imgsz=640,
-            verbose=False,
-        ))
-
-    def detection_quality(result):
-        if result.boxes is None:
-            return 0, 0.0
-        boxes = result.boxes
-        count = len(boxes)
-        confidence_sum = float(boxes.conf.sum().item()) if boxes.conf is not None else 0.0
-        return count, confidence_sum
-
-    # Pass 1: the orientation that worked last time (starts as the normal, upright one).
-    best_index = selected_orientation_index
-    best_img = orient(best_index)
-    best_result = predict([best_img])[0]
-
-    # Pass 2 (only if nobody was found): try the remaining rotations in one batch.
-    if search_rotations and detection_quality(best_result)[0] == 0:
-        other_indexes = [i for i in range(len(rotations)) if i != best_index]
-        other_frames = [orient(i) for i in other_indexes]
-        other_results = predict(other_frames)
-        if len(other_results) != len(other_frames):
-            raise RuntimeError(
-                f"YOLO returned {len(other_results)} results for {len(other_frames)} image orientations"
-            )
-        winner = max(
-            range(len(other_results)),
-            key=lambda k: (*detection_quality(other_results[k]), -k),
-        )
-        if detection_quality(other_results[winner])[0]:
-            best_index = other_indexes[winner]
-            best_img = other_frames[winner]
-            best_result = other_results[winner]
-            selected_orientation_index = best_index
-
-    img = best_img
-    boxes = (
-        best_result.boxes.xyxy.cpu().numpy().tolist()
-        if best_result.boxes is not None
-        else []
-    )
-    annotated = best_result.plot()
-    detected_this_frame = bool(boxes)
-
-    recent_human_confidences.append(detected_this_frame)
-    is_human_confirmed = detected_this_frame   # single-frame result, used for /verify_frame
-    return img, annotated, boxes, is_human_confirmed
+    boxes = [e["box"] for e in entries if e["counted"]]
+    annotated = draw_person_boxes(img, entries)
+    is_human = bool(boxes)
+    recent_human_confidences.append(is_human)
+    return img, annotated, boxes, is_human
 
 
 def build_heatmap(img, boxes):
@@ -484,15 +591,20 @@ def verify_frame():
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filename = f"verify_{timestamp}.jpg"
-    
+
+    # --- WEAPON / THREAT DETECTION ---
+    # Scan the RAW frame (never the annotated copy: the drawn boxes and text can look like objects),
+    # then draw what was flagged onto the saved audit image.
+    threat_found = scan_threats(img)
+    annotated = draw_threat_boxes(annotated, threat_found)
+
     cv2.imwrite(os.path.join(CAPTURES_DIR, filename), annotated)
     cv2.imwrite(os.path.join(SAVE_DIR, filename), annotated)
-    
+
     last_verify_image_name = filename
     latest_image_name = filename
 
-    # --- WEAPON / THREAT DETECTION ---
-    detected_weapons = handle_threats(os.path.join(CAPTURES_DIR, filename), filename)
+    detected_weapons = handle_threats(img, filename, detections=threat_found)
     threat_detected = bool(detected_weapons)
 
     heatmap = build_heatmap(img, boxes)
@@ -569,12 +681,14 @@ def periodic_frame():
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filename = f"frame_{timestamp}.jpg"
+    threat_found = scan_threats(img) if SCAN_PERIODIC_FRAMES else []   # raw frame, see verify_frame
+    annotated = draw_threat_boxes(annotated, threat_found)
     cv2.imwrite(os.path.join(CAPTURES_DIR, filename), annotated)
     cv2.imwrite(os.path.join(SAVE_DIR, filename), annotated)
     latest_image_name = filename
 
     if SCAN_PERIODIC_FRAMES:   # also look for weapons in the ambient frames, not just at the gate
-        handle_threats(os.path.join(CAPTURES_DIR, filename), filename)
+        handle_threats(img, filename, detections=threat_found)
 
     heatmap = build_heatmap(img, boxes)
     heatmap_name = f"heatmap_{timestamp}.jpg"
