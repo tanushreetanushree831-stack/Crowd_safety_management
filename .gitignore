@@ -23,3 +23,11 @@ Thumbs.db
 
 # Model weights
 *.pt
+
+__pycache__/
+*.pyc
+.secret_key
+*.db
+captures/
+processed_images/
+yolov8s.pt
